@@ -1,0 +1,123 @@
+--========================================================--
+--                 OTAVIO HUB - Gameplay Script           --
+-- Automático: Coleta baús, constrói Stronghold e dá Hop  --
+--========================================================--
+
+local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
+local ServerStorage = game:GetService("ServerStorage")
+local TeleportService = game:GetService("TeleportService")
+
+print("🔹 OTAVIO HUB | Sistema automático com Server Hop ativo!")
+
+-- === Pegar baús com diamante não abertos ===
+local function getDiamondChests()
+	local result = {}
+	for _, chest in ipairs(CollectionService:GetTagged("Chest")) do
+		if chest:IsA("Model")
+			and chest:GetAttribute("ContainsDiamond") == true
+			and chest:GetAttribute("Opened") ~= true then
+			table.insert(result, chest)
+		end
+	end
+	return result
+end
+
+-- === Abrir baú e dar diamantes ===
+local function openChest(chestModel, player)
+	chestModel:SetAttribute("Opened", true)
+
+	local amount = chestModel:GetAttribute("DiamondAmount") or 1
+	local ls = player:FindFirstChild("leaderstats")
+	if ls then
+		local diamonds = ls:FindFirstChild("Diamonds")
+		if diamonds and diamonds:IsA("IntValue") then
+			diamonds.Value += amount
+		end
+	end
+
+	local hinge = chestModel:FindFirstChild("Hinge", true)
+	if hinge and hinge:IsA("HingeConstraint") then
+		task.spawn(function()
+			pcall(function()
+				hinge.TargetAngle = 90
+			end)
+		end)
+	end
+
+	local sfx = chestModel:FindFirstChild("OpenSFX", true)
+	if sfx and sfx:IsA("Sound") then
+		pcall(function() sfx:Play() end)
+	end
+end
+
+-- === Coletar todos os baús com diamante ===
+local function collectAllDiamondChests(forPlayer)
+	local diamondChests = getDiamondChests()
+	if #diamondChests == 0 then
+		return false
+	end
+
+	print("🔹 OTAVIO HUB | Coletando " .. #diamondChests .. " baús para " .. forPlayer.Name)
+	for _, chest in ipairs(diamondChests) do
+		openChest(chest, forPlayer)
+	end
+	return true
+end
+
+-- === Verificar se Stronghold já existe ===
+local function strongholdExists()
+	for _, obj in ipairs(workspace:GetChildren()) do
+		if obj.Name == "Stronghold" and obj:IsA("Model") then
+			return true
+		end
+	end
+	return false
+end
+
+-- === Construir Stronghold ===
+local function buildStronghold(atPosition)
+	local src = ServerStorage:FindFirstChild("Stronghold")
+	if not src or not src:IsA("Model") then
+		warn("[OTAVIO HUB] Modelo 'Stronghold' não encontrado no ServerStorage.")
+		return false
+	end
+	local clone = src:Clone()
+	clone.Name = "Stronghold"
+	clone:PivotTo(CFrame.new(atPosition))
+	clone.Parent = workspace
+	print("🔹 OTAVIO HUB | Stronghold construída em " .. tostring(atPosition))
+	return true
+end
+
+-- === Hop para outro servidor ===
+local function hopServer(player)
+	print("🔹 OTAVIO HUB | Nada mais para fazer. Mudando de servidor...")
+	TeleportService:Teleport(game.PlaceId, player)
+end
+
+-- === Fluxo principal automático ===
+local function runAutomation(player)
+	task.wait(2) -- Espera só 2 segundos para carregar mapa
+
+	-- Coletar baús
+	local gotDiamonds = collectAllDiamondChests(player)
+
+	-- Construir Stronghold se não existir
+	local built = false
+	if not strongholdExists() then
+		built = buildStronghold(Vector3.new(0, 10, 0))
+	end
+
+	-- Se já coletou tudo e construiu Stronghold → hop instantâneo
+	if not gotDiamonds and strongholdExists() then
+		hopServer(player)
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function()
+		task.wait(1)
+		runAutomation(player)
+	end)
+end)
